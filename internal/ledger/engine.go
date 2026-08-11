@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -25,18 +26,36 @@ const (
 	AccountExpense   AccountType = "EXPENSE"
 )
 
+// Account struct for API responses
+type Account struct {
+	ID        string      `json:"id"`
+	Name      string      `json:"name"`
+	Type      AccountType `json:"type"`
+	Currency  string      `json:"currency"`
+	CreatedAt time.Time   `json:"created_at"`
+}
+
+// TransactionHistoryItem represents entry record for an account
+type TransactionHistoryItem struct {
+	TransactionID string    `json:"transaction_id"`
+	Description   string    `json:"description"`
+	PostedAt      time.Time `json:"posted_at"`
+	Direction     string    `json:"direction"`
+	Amount        int64     `json:"amount"`
+}
+
 // Posting describes a single side of a journal entry.
 type Posting struct {
-	AccountID string
-	Direction string
-	Amount    int64
+	AccountID string `json:"account_id"`
+	Direction string `json:"direction"`
+	Amount    int64  `json:"amount"`
 }
 
 // TransactionRequest is the payload for a write-style ledger operation.
 type TransactionRequest struct {
-	IdempotencyKey *string
-	Description    string
-	Postings       []Posting
+	IdempotencyKey *string   `json:"idempotency_key,omitempty"`
+	Description    string    `json:"description"`
+	Postings       []Posting `json:"postings"`
 }
 
 // Engine is the concrete service dependency.
@@ -46,6 +65,63 @@ type Engine struct {
 
 func NewEngine(pool *pgxpool.Pool) *Engine {
 	return &Engine{db: pool}
+}
+
+// CreateAccount registers a new account in the system
+func (e *Engine) CreateAccount(ctx context.Context, id, name string, accType AccountType, currency string) (*Account, error) {
+	validTypes := map[AccountType]bool{
+		AccountAsset:     true,
+		AccountLiability: true,
+		AccountEquity:    true,
+		AccountRevenue:   true,
+		AccountExpense:   true,
+	}
+
+	if !validTypes[accType] {
+		return nil, fmt.Errorf("invalid account type: %s", accType)
+	}
+
+	query := `
+		INSERT INTO accounts (id, name, type, currency, created_at)
+		VALUES ($1, $2, $3, $4, NOW())
+		RETURNING id, name, type, currency, created_at
+	`
+	acc := &Account{}
+	err := e.db.QueryRow(ctx, query, id, name, accType, currency).Scan(
+		&acc.ID, &acc.Name, &acc.Type, &acc.Currency, &acc.CreatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create account: %w", err)
+	}
+
+	return acc, nil
+}
+
+// GetAccountTransactions retrieves the full transaction history for a specific account
+func (e *Engine) GetAccountTransactions(ctx context.Context, accountID string) ([]TransactionHistoryItem, error) {
+	query := `
+		SELECT t.id, COALESCE(t.description, ''), t.posted_at, e.direction, e.amount
+		FROM entries e
+		JOIN transactions t ON e.transaction_id = t.id
+		WHERE e.account_id = $1
+		ORDER BY t.posted_at DESC
+	`
+	rows, err := e.db.Query(ctx, query, accountID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch transactions: %w", err)
+	}
+	defer rows.Close()
+
+	var history []TransactionHistoryItem
+	for rows.Next() {
+		var item TransactionHistoryItem
+		if err := rows.Scan(&item.TransactionID, &item.Description, &item.PostedAt, &item.Direction, &item.Amount); err != nil {
+			return nil, err
+		}
+		history = append(history, item)
+	}
+
+	return history, nil
 }
 
 // PostTransaction opens a DB transaction and executes the postings.

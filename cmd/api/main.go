@@ -22,8 +22,8 @@ func main() {
 	engine := ledger.NewEngine(pool)
 	walletSvc := ledger.NewWalletService(engine)
 
-	// 3. Handler зангилаатай холбох
-	h := handler.NewServer(walletSvc)
+	// 3. Handler зангилаатай холбох (engine-ийг дамжуулна)
+	h := handler.NewServer(walletSvc, engine)
 
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
