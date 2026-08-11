@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -18,7 +22,9 @@ func main() {
 		dbURL = "postgres://tergel:tergelgod@localhost:5432/mydatabase?sslmode=disable"
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
 		log.Fatalf("Unable to connect to database: %v\n", err)
@@ -43,8 +49,30 @@ func main() {
 		port = "8080"
 	}
 
-	log.Printf("Server starting on port %s...", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
-		log.Fatalf("Server failed to start: %v\n", err)
+	server := &http.Server{
+		Addr:    ":" + port,
+		Handler: mux,
 	}
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		log.Printf("Server starting on port %s...", port)
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("Server failed to start: %v\n", err)
+		}
+	}()
+
+	<-stop
+	log.Println("Shutting down server gracefully...")
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+
+	log.Println("Server exiting successfully.")
 }

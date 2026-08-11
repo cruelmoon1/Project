@@ -10,23 +10,23 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const (
-	Debit  = "DEBIT"
-	Credit = "CREDIT"
-)
-
-// Account types matching required research
 type AccountType string
 
 const (
-	AccountAsset     AccountType = "ASSET"
-	AccountLiability AccountType = "LIABILITY"
-	AccountEquity    AccountType = "EQUITY"
-	AccountRevenue   AccountType = "REVENUE"
-	AccountExpense   AccountType = "EXPENSE"
+	Asset     AccountType = "ASSET"
+	Liability AccountType = "LIABILITY"
+	Equity    AccountType = "EQUITY"
+	Revenue   AccountType = "REVENUE"
+	Expense   AccountType = "EXPENSE"
 )
 
-// Account struct for API responses
+type Direction string
+
+const (
+	Debit  Direction = "DEBIT"
+	Credit Direction = "CREDIT"
+)
+
 type Account struct {
 	ID        string      `json:"id"`
 	Name      string      `json:"name"`
@@ -35,59 +35,44 @@ type Account struct {
 	CreatedAt time.Time   `json:"created_at"`
 }
 
-// TransactionHistoryItem represents entry record for an account
-type TransactionHistoryItem struct {
-	TransactionID string    `json:"transaction_id"`
-	Description   string    `json:"description"`
-	PostedAt      time.Time `json:"posted_at"`
-	Direction     string    `json:"direction"`
-	Amount        int64     `json:"amount"`
+type Entry struct {
+	AccountID string    `json:"account_id"`
+	Direction Direction `json:"direction"`
+	Amount    int64     `json:"amount"`
 }
 
-// Posting describes a single side of a journal entry.
-type Posting struct {
-	AccountID string `json:"account_id"`
-	Direction string `json:"direction"`
-	Amount    int64  `json:"amount"`
-}
-
-// TransactionRequest is the payload for a write-style ledger operation.
 type TransactionRequest struct {
-	IdempotencyKey *string   `json:"idempotency_key,omitempty"`
-	Description    string    `json:"description"`
-	Postings       []Posting `json:"postings"`
+	ID             string  `json:"id,omitempty"`
+	IdempotencyKey string  `json:"idempotency_key,omitempty"`
+	Description    string  `json:"description,omitempty"`
+	Postings       []Entry `json:"postings"`
 }
 
-// Engine is the concrete service dependency.
+type TransactionHistory struct {
+	ID          string    `json:"id"`
+	Description string    `json:"description"`
+	Direction   Direction `json:"direction"`
+	Amount      int64     `json:"amount"`
+	PostedAt    time.Time `json:"posted_at"`
+}
+
 type Engine struct {
-	db *pgxpool.Pool
+	pool *pgxpool.Pool
 }
 
 func NewEngine(pool *pgxpool.Pool) *Engine {
-	return &Engine{db: pool}
+	return &Engine{pool: pool}
 }
 
-// CreateAccount registers a new account in the system
 func (e *Engine) CreateAccount(ctx context.Context, id, name string, accType AccountType, currency string) (*Account, error) {
-	validTypes := map[AccountType]bool{
-		AccountAsset:     true,
-		AccountLiability: true,
-		AccountEquity:    true,
-		AccountRevenue:   true,
-		AccountExpense:   true,
-	}
-
-	if !validTypes[accType] {
-		return nil, fmt.Errorf("invalid account type: %s", accType)
-	}
-
 	query := `
-		INSERT INTO accounts (id, name, type, currency, created_at)
-		VALUES ($1, $2, $3, $4, NOW())
-		RETURNING id, name, type, currency, created_at
+		INSERT INTO accounts (id, name, type, currency)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, name, type, currency, created_at;
 	`
+
 	acc := &Account{}
-	err := e.db.QueryRow(ctx, query, id, name, accType, currency).Scan(
+	err := e.pool.QueryRow(ctx, query, id, name, accType, currency).Scan(
 		&acc.ID, &acc.Name, &acc.Type, &acc.Currency, &acc.CreatedAt,
 	)
 	if err != nil {
@@ -97,154 +82,124 @@ func (e *Engine) CreateAccount(ctx context.Context, id, name string, accType Acc
 	return acc, nil
 }
 
-// GetAccountTransactions retrieves the full transaction history for a specific account
-func (e *Engine) GetAccountTransactions(ctx context.Context, accountID string) ([]TransactionHistoryItem, error) {
-	query := `
-		SELECT t.id, COALESCE(t.description, ''), t.posted_at, e.direction, e.amount
-		FROM entries e
-		JOIN transactions t ON e.transaction_id = t.id
-		WHERE e.account_id = $1
-		ORDER BY t.posted_at DESC
-	`
-	rows, err := e.db.Query(ctx, query, accountID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch transactions: %w", err)
-	}
-	defer rows.Close()
-
-	var history []TransactionHistoryItem
-	for rows.Next() {
-		var item TransactionHistoryItem
-		if err := rows.Scan(&item.TransactionID, &item.Description, &item.PostedAt, &item.Direction, &item.Amount); err != nil {
-			return nil, err
-		}
-		history = append(history, item)
-	}
-
-	return history, nil
-}
-
-// PostTransaction opens a DB transaction and executes the postings.
 func (e *Engine) PostTransaction(ctx context.Context, req TransactionRequest) error {
-	tx, err := e.db.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer tx.Rollback(ctx)
-
-	if err := e.PostTransactionTx(ctx, tx, req); err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
-}
-
-// PostTransactionTx executes ledger posting within an existing database transaction.
-func (e *Engine) PostTransactionTx(ctx context.Context, tx pgx.Tx, req TransactionRequest) error {
 	if len(req.Postings) < 2 {
-		return errors.New("a double-entry transaction requires at least 2 postings")
+		return errors.New("transaction must have at least two postings")
 	}
 
-	// 1. Invariant Check: Debits MUST Equal Credits
 	var totalDebit, totalCredit int64
 	for _, p := range req.Postings {
 		if p.Amount <= 0 {
-			return errors.New("posting amount must be positive")
+			return fmt.Errorf("posting amount must be positive, got: %d", p.Amount)
 		}
-		switch p.Direction {
-		case Debit:
+		if p.Direction == Debit {
 			totalDebit += p.Amount
-		case Credit:
+		} else if p.Direction == Credit {
 			totalCredit += p.Amount
-		default:
+		} else {
 			return fmt.Errorf("invalid direction: %s", p.Direction)
 		}
 	}
 
 	if totalDebit != totalCredit {
-		return fmt.Errorf("transaction unbalance: total debits (%d) != total credits (%d)", totalDebit, totalCredit)
+		return fmt.Errorf("transaction is unbalanced: debits (%d) != credits (%d)", totalDebit, totalCredit)
 	}
 
-	// 2. Idempotency Check
-	if req.IdempotencyKey != nil && *req.IdempotencyKey != "" {
-		var existingID string
-		err := tx.QueryRow(ctx, `SELECT id FROM transactions WHERE idempotency_key = $1`, *req.IdempotencyKey).Scan(&existingID)
-		if err == nil {
-			// Already processed successfully, return idempotently
-			return nil
-		} else if !errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("idempotency check error: %w", err)
-		}
-	}
-
-	// 3. Insert Transaction Header
-	var txID string
-	err := tx.QueryRow(ctx,
-		`INSERT INTO transactions (idempotency_key, description) VALUES ($1, $2) RETURNING id`,
-		req.IdempotencyKey, req.Description,
-	).Scan(&txID)
+	tx, err := e.pool.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to insert transaction header: %w", err)
+		return fmt.Errorf("failed to begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var txID string
+	txQuery := `
+		INSERT INTO transactions (idempotency_key, description)
+		VALUES ($1, $2)
+		RETURNING id;
+	`
+	var idempotencyKey *string
+	if req.IdempotencyKey != "" {
+		idempotencyKey = &req.IdempotencyKey
 	}
 
-	// 4. Lock Accounts and Insert Entries (Concurrency Safety)
+	err = tx.QueryRow(ctx, txQuery, idempotencyKey, req.Description).Scan(&txID)
+	if err != nil {
+		return fmt.Errorf("failed to insert transaction: %w", err)
+	}
+
+	entryQuery := `
+		INSERT INTO entries (transaction_id, account_id, direction, amount)
+		VALUES ($1, $2, $3, $4);
+	`
+
 	for _, p := range req.Postings {
 		var accType AccountType
-		// Row lock to prevent race conditions during concurrent transactions
-		err := tx.QueryRow(ctx, `SELECT type FROM accounts WHERE id = $1 FOR UPDATE`, p.AccountID).Scan(&accType)
-		if err != nil {
-			return fmt.Errorf("account %s not found: %w", p.AccountID, err)
+		accErr := tx.QueryRow(ctx, "SELECT type FROM accounts WHERE id = $1", p.AccountID).Scan(&accType)
+		if accErr != nil {
+			if errors.Is(accErr, pgx.ErrNoRows) {
+				return fmt.Errorf("account not found: %s", p.AccountID)
+			}
+			return fmt.Errorf("failed to fetch account type: %w", accErr)
 		}
 
-		_, err = tx.Exec(ctx,
-			`INSERT INTO entries (transaction_id, account_id, direction, amount) VALUES ($1, $2, $3, $4)`,
-			txID, p.AccountID, p.Direction, p.Amount,
-		)
+		if accType == Asset {
+			var currentBalance int64
+			balQuery := `
+				SELECT COALESCE(SUM(CASE WHEN direction = 'DEBIT' THEN amount ELSE -amount END), 0)
+				FROM entries
+				WHERE account_id = $1;
+			`
+			if err := tx.QueryRow(ctx, balQuery, p.AccountID).Scan(&currentBalance); err != nil {
+				return fmt.Errorf("failed to calculate current balance: %w", err)
+			}
+
+			var balanceChange int64
+			if p.Direction == Debit {
+				balanceChange = p.Amount
+			} else {
+				balanceChange = -p.Amount
+			}
+
+			if currentBalance+balanceChange < 0 {
+				return fmt.Errorf("transaction rejected: insufficient balance on account %s (current balance: %d)", p.AccountID, currentBalance)
+			}
+		}
+
+		_, err := tx.Exec(ctx, entryQuery, txID, p.AccountID, p.Direction, p.Amount)
 		if err != nil {
 			return fmt.Errorf("failed to insert entry: %w", err)
 		}
 	}
 
-	// 5. Invariant Check: No Overdraft / Negative Balance
-	for _, p := range req.Postings {
-		bal, err := calculateTxAccountBalance(ctx, tx, p.AccountID)
-		if err != nil {
-			return err
-		}
-		if bal < 0 {
-			return fmt.Errorf("transaction rejected: insufficient balance on account %s (current balance: %d)", p.AccountID, bal)
-		}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit tx: %w", err)
 	}
 
 	return nil
 }
 
-// Internal helper function to compute real-time balance inside an active SQL transaction
-func calculateTxAccountBalance(ctx context.Context, tx pgx.Tx, accountID string) (int64, error) {
-	var accType AccountType
-	err := tx.QueryRow(ctx, `SELECT type FROM accounts WHERE id = $1`, accountID).Scan(&accType)
+func (e *Engine) GetAccountTransactions(ctx context.Context, accountID string) ([]TransactionHistory, error) {
+	query := `
+		SELECT t.id, COALESCE(t.description, ''), e.direction, e.amount, t.posted_at
+		FROM entries e
+		JOIN transactions t ON e.transaction_id = t.id
+		WHERE e.account_id = $1
+		ORDER BY t.posted_at DESC;
+	`
+	rows, err := e.pool.Query(ctx, query, accountID)
 	if err != nil {
-		return 0, err
+		return nil, err
+	}
+	defer rows.Close()
+
+	var history []TransactionHistory
+	for rows.Next() {
+		var h TransactionHistory
+		if err := rows.Scan(&h.ID, &h.Description, &h.Direction, &h.Amount, &h.PostedAt); err != nil {
+			return nil, err
+		}
+		history = append(history, h)
 	}
 
-	var totalDebit, totalCredit int64
-	err = tx.QueryRow(ctx, `
-		SELECT 
-			COALESCE(SUM(CASE WHEN direction = 'DEBIT' THEN amount ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN direction = 'CREDIT' THEN amount ELSE 0 END), 0)
-		FROM entries WHERE account_id = $1
-	`, accountID).Scan(&totalDebit, &totalCredit)
-	if err != nil {
-		return 0, err
-	}
-
-	// Accounting Balance Rules
-	switch accType {
-	case AccountAsset, AccountExpense:
-		return totalDebit - totalCredit, nil
-	case AccountLiability, AccountEquity, AccountRevenue:
-		return totalCredit - totalDebit, nil
-	default:
-		return totalCredit - totalDebit, nil
-	}
+	return history, nil
 }

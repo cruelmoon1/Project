@@ -63,20 +63,36 @@ func (h *Handler) handleAccountByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := strings.TrimPrefix(r.URL.Path, "/accounts/")
-	if id == "" {
+	path := strings.TrimPrefix(r.URL.Path, "/accounts/")
+	parts := strings.Split(path, "/")
+
+	accountID := parts[0]
+	if accountID == "" {
 		http.Error(w, "Account ID is required", http.StatusBadRequest)
 		return
 	}
 
-	bal, err := h.walletSvc.GetAccountBalance(r.Context(), id, nil)
+	// GET /accounts/{id}/transactions
+	if len(parts) > 1 && parts[1] == "transactions" {
+		history, err := h.engine.GetAccountTransactions(r.Context(), accountID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(history)
+		return
+	}
+
+	// GET /accounts/{id}
+	bal, err := h.walletSvc.GetAccountBalance(r.Context(), accountID, nil)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	res := map[string]interface{}{
-		"account_id": id,
+		"account_id": accountID,
 		"balance":    bal,
 	}
 
