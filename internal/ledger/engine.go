@@ -111,30 +111,10 @@ func (e *Engine) PostTransaction(ctx context.Context, req TransactionRequest) er
 	}
 	defer tx.Rollback(ctx)
 
-	var txID string
-	txQuery := `
-		INSERT INTO transactions (idempotency_key, description)
-		VALUES ($1, $2)
-		RETURNING id;
-	`
-	var idempotencyKey *string
-	if req.IdempotencyKey != "" {
-		idempotencyKey = &req.IdempotencyKey
-	}
-
-	err = tx.QueryRow(ctx, txQuery, idempotencyKey, req.Description).Scan(&txID)
-	if err != nil {
-		return fmt.Errorf("failed to insert transaction: %w", err)
-	}
-
-	entryQuery := `
-		INSERT INTO entries (transaction_id, account_id, direction, amount)
-		VALUES ($1, $2, $3, $4);
-	`
-
+	// CONCURRENCY SAFETY: Гүйлгээнд оролцох бүх дансыг FOR UPDATE хийж түгжинэ
 	for _, p := range req.Postings {
 		var accType AccountType
-		accErr := tx.QueryRow(ctx, "SELECT type FROM accounts WHERE id = $1", p.AccountID).Scan(&accType)
+		accErr := tx.QueryRow(ctx, "SELECT type FROM accounts WHERE id = $1 FOR UPDATE", p.AccountID).Scan(&accType)
 		if accErr != nil {
 			if errors.Is(accErr, pgx.ErrNoRows) {
 				return fmt.Errorf("account not found: %s", p.AccountID)
@@ -164,7 +144,30 @@ func (e *Engine) PostTransaction(ctx context.Context, req TransactionRequest) er
 				return fmt.Errorf("transaction rejected: insufficient balance on account %s (current balance: %d)", p.AccountID, currentBalance)
 			}
 		}
+	}
 
+	var txID string
+	txQuery := `
+		INSERT INTO transactions (idempotency_key, description)
+		VALUES ($1, $2)
+		RETURNING id;
+	`
+	var idempotencyKey *string
+	if req.IdempotencyKey != "" {
+		idempotencyKey = &req.IdempotencyKey
+	}
+
+	err = tx.QueryRow(ctx, txQuery, idempotencyKey, req.Description).Scan(&txID)
+	if err != nil {
+		return fmt.Errorf("failed to insert transaction: %w", err)
+	}
+
+	entryQuery := `
+		INSERT INTO entries (transaction_id, account_id, direction, amount)
+		VALUES ($1, $2, $3, $4);
+	`
+
+	for _, p := range req.Postings {
 		_, err := tx.Exec(ctx, entryQuery, txID, p.AccountID, p.Direction, p.Amount)
 		if err != nil {
 			return fmt.Errorf("failed to insert entry: %w", err)
