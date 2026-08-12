@@ -1,0 +1,35 @@
+$kind: http-request
+name: 'Post Transaction - Single Posting'
+order: 12000
+method: POST
+url: '{{baseUrl}}/transactions'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "idempotency_key": "txn-single-001",
+      "description": "Single posting - should fail",
+      "postings": [
+        {
+          "account_id": "cash-clearing-001",
+          "direction": "DEBIT",
+          "amount": 5000
+        }
+      ]
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status code is 400 for single posting", function () {
+        pm.response.to.have.status(400);
+      });
+      pm.test("Response body contains error about needing at least two postings", function () {
+        var body = pm.response.text();
+        pm.expect(body.toLowerCase()).to.satisfy(function (b) {
+          return b.includes("two") || b.includes("2") || b.includes("posting") || b.includes("least");
+        });
+      });

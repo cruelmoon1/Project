@@ -1,0 +1,40 @@
+$kind: http-request
+name: 'Post Transaction - Unbalanced'
+order: 11000
+method: POST
+url: '{{baseUrl}}/transactions'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "idempotency_key": "txn-unbalanced-001",
+      "description": "Unbalanced transaction - should fail",
+      "postings": [
+        {
+          "account_id": "cash-clearing-001",
+          "direction": "DEBIT",
+          "amount": 5000
+        },
+        {
+          "account_id": "user-wallet-001",
+          "direction": "CREDIT",
+          "amount": 3000
+        }
+      ]
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status code is 400 for unbalanced transaction", function () {
+        pm.response.to.have.status(400);
+      });
+      pm.test("Response body contains unbalanced debits/credits error", function () {
+        var body = pm.response.text();
+        pm.expect(body.toLowerCase()).to.satisfy(function (b) {
+          return b.includes("unbalanced") || b.includes("debit") || b.includes("credit") || b.includes("balance");
+        });
+      });

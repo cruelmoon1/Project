@@ -1,0 +1,31 @@
+$kind: http-request
+name: 'Withdraw - Overdraft'
+order: 9000
+method: POST
+url: '{{baseUrl}}/withdrawals'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "source_account_id": "user-wallet-001",
+      "destination_account_id": "cash-clearing-001",
+      "amount": 9999999,
+      "idempotency_key": "withdraw-overdraft-001",
+      "description": "Overdraft attempt"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status code is 400 for overdraft", function () {
+        pm.response.to.have.status(400);
+      });
+      pm.test("Response body contains insufficient balance error", function () {
+        var body = pm.response.text();
+        pm.expect(body.toLowerCase()).to.satisfy(function (b) {
+          return b.includes("insufficient") || b.includes("balance") || b.includes("overdraft");
+        });
+      });

@@ -1,0 +1,11 @@
+Postman Collection & API Testing: Successfully tested core endpoints including Account creation (POST /accounts) and Transaction processing (POST /transactions).
+
+Input Validation & Error Handling: Verified behavior for error cases such as invalid payloads, missing or incorrect fields, unique constraint violations on primary keys, and transaction entry rules.
+
+Repository Cleanup & Version Control: Configured .gitignore to properly exclude local Postman exports, environment configurations, and temporary files.
+
+Documentation (README.md): Created an installation and execution guide supporting both local development and Docker containers.
+
+Running Tests Locally: Execute go test ./... in the project root terminal to run all unit and integration tests successfully across packages like internal/db, internal/handler, and internal/ledger.
+
+Running Application Locally: Execute go run cmd/api/main.go from the project root directory to start the server.

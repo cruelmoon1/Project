@@ -1,0 +1,29 @@
+$kind: http-request
+name: Withdraw
+order: 8000
+method: POST
+url: '{{baseUrl}}/withdrawals'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "source_account_id": "user-wallet-001",
+      "destination_account_id": "cash-clearing-001",
+      "amount": 2000,
+      "idempotency_key": "withdraw-001",
+      "description": "Withdrawal"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status code is 200", function () {
+        pm.response.to.have.status(200);
+      });
+      pm.test("Response status equals success", function () {
+        var json = pm.response.json();
+        pm.expect(json.status).to.eql("success");
+      });

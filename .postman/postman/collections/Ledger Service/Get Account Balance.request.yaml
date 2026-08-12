@@ -1,0 +1,25 @@
+$kind: http-request
+name: Get Account Balance
+order: 3000
+method: GET
+url: '{{baseUrl}}/accounts/cash-clearing-001'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status code is 200", function () {
+        pm.response.to.have.status(200);
+      });
+      pm.test("Response has account_id and balance fields", function () {
+        var json = pm.response.json();
+        pm.expect(json).to.have.property("account_id");
+        pm.expect(json).to.have.property("balance");
+      });
+      pm.test("Balance is a number", function () {
+        var json = pm.response.json();
+        pm.expect(json.balance).to.be.a("number");
+      });
+      pm.test("account_id equals cash-clearing-001", function () {
+        var json = pm.response.json();
+        pm.expect(json.account_id).to.eql("cash-clearing-001");
+      });

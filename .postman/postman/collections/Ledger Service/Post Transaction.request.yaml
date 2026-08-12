@@ -1,0 +1,38 @@
+$kind: http-request
+name: Post Transaction
+order: 10000
+method: POST
+url: '{{baseUrl}}/transactions'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "idempotency_key": "txn-manual-001",
+      "description": "Manual double-entry transaction",
+      "postings": [
+        {
+          "account_id": "cash-clearing-001",
+          "direction": "DEBIT",
+          "amount": 5000
+        },
+        {
+          "account_id": "user-wallet-001",
+          "direction": "CREDIT",
+          "amount": 5000
+        }
+      ]
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status code is 201", function () {
+        pm.response.to.have.status(201);
+      });
+      pm.test("Response status equals transaction created", function () {
+        var json = pm.response.json();
+        pm.expect(json.status).to.eql("transaction created");
+      });

@@ -1,0 +1,31 @@
+$kind: http-request
+name: 'Deposit - Invalid Amount'
+order: 7000
+method: POST
+url: '{{baseUrl}}/deposits'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "source_account_id": "cash-clearing-001",
+      "destination_account_id": "user-wallet-001",
+      "amount": -500,
+      "idempotency_key": "deposit-neg-001",
+      "description": "Negative amount deposit"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status code is 400 for invalid amount", function () {
+        pm.response.to.have.status(400);
+      });
+      pm.test("Response body contains an error message", function () {
+        var json = pm.response.json();
+        pm.expect(json).to.satisfy(function (body) {
+          return body.error || body.message || body.errors || typeof body === "string";
+        });
+      });

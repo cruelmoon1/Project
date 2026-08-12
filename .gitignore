@@ -1,1 +1,5 @@
 node_modules
+#Postman local exports and environment files
+postman_environment.json
+postman_collection.json
+postman/local/

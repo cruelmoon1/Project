@@ -1,0 +1,12 @@
+$kind: http-request
+name: 'Create Account - Wrong Method'
+order: 13000
+method: GET
+url: '{{baseUrl}}/accounts'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status code is 405 Method Not Allowed", function () {
+        pm.response.to.have.status(405);
+      });

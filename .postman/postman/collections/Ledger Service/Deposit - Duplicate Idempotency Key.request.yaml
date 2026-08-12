@@ -1,0 +1,25 @@
+$kind: http-request
+name: 'Deposit - Duplicate Idempotency Key'
+order: 6000
+method: POST
+url: '{{baseUrl}}/deposits'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "source_account_id": "cash-clearing-001",
+      "destination_account_id": "user-wallet-001",
+      "amount": 10000,
+      "idempotency_key": "deposit-001",
+      "description": "Duplicate deposit - should be rejected"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status code is 400 for duplicate idempotency key", function () {
+        pm.response.to.have.status(400);
+      });

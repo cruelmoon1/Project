@@ -1,0 +1,33 @@
+$kind: http-request
+name: Create Account
+order: 1000
+method: POST
+url: '{{baseUrl}}/accounts'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "id": "cash-clearing-001",
+      "name": "Cash Clearing Account",
+      "type": "ASSET",
+      "currency": "USD"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status code is 201", function () {
+        pm.response.to.have.status(201);
+      });
+      pm.test("Response has required fields", function () {
+        var json = pm.response.json();
+        pm.expect(json).to.have.property("id");
+        pm.expect(json).to.have.property("name");
+        pm.expect(json).to.have.property("type");
+        pm.expect(json).to.have.property("currency");
+        pm.expect(json).to.have.property("created_at");
+      });
+      pm.collectionVariables.set("accountId", pm.response.json().id);

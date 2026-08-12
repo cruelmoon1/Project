@@ -1,0 +1,28 @@
+$kind: http-request
+name: Get Account Transactions
+order: 4000
+method: GET
+url: '{{baseUrl}}/accounts/cash-clearing-001/transactions'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status code is 200", function () {
+        pm.response.to.have.status(200);
+      });
+      pm.test("Response is an array or null", function () {
+        var json = pm.response.json();
+        pm.expect(json === null || Array.isArray(json)).to.be.true;
+      });
+      pm.test("If array has items, each item has required fields", function () {
+        var json = pm.response.json();
+        if (Array.isArray(json) && json.length > 0) {
+          json.forEach(function (item) {
+            pm.expect(item).to.have.property("id");
+            pm.expect(item).to.have.property("description");
+            pm.expect(item).to.have.property("direction");
+            pm.expect(item).to.have.property("amount");
+            pm.expect(item).to.have.property("posted_at");
+          });
+        }
+      });

@@ -1,25 +1,45 @@
-# General Ledger and Wallet Service in Go
+Run the application:
 
-A double-entry general ledger engine with a wallet layer built in Go and PostgreSQL.
+Bash
+go run cmd/main.go
+The server will start on http://localhost:8080.
 
-## Features & Invariants
-- **Double-Entry Accounting:** Strictly enforces Debits = Credits for all entries.
-- **Immutability:** Entries are read-only and never updated or deleted.
-- **Idempotency:** Accepts an `idempotency_key` per operation to prevent duplicate execution.
-- **Concurrency Safety:** Uses PostgreSQL row-level locks (`SELECT ... FOR UPDATE`) to prevent overdrafts.
-- **Historical Balances:** Supports querying balances at any historical timestamp (`at` query param).
+Option 2: Running with Docker Compose
+Ensure Docker is running.
 
-## Accounting Mapping (Why Debits & Credits?)
-- **Deposit:**
-  - `DEBIT` Asset (Cash Clearing) — Increases platform cash.
-  - `CREDIT` Liability (User Wallet) — Increases what the platform owes the user.
-- **Withdrawal:**
-  - `DEBIT` Liability (User Wallet) — Decreases what the platform owes the user.
-  - `CREDIT` Asset (Cash Clearing) — Decreases platform cash.
-- **Transfer:**
-  - `DEBIT` Liability (Sender Wallet) — Decreases sender balance.
-  - `CREDIT` Liability (Receiver Wallet) — Increases receiver balance.
+Build and start the containers:
 
-## How to Run
-```bash
+Bash
 docker compose up --build
+The API will be available at http://localhost:8080.
+
+Монгол Хувилбар
+Шаардлагатай зүйлс
+Go (хувилбар 1.18 болон түүнээс дээш)
+
+Docker болон Docker Compose
+
+Postman (API турших зорилгоор)
+
+Ажиллуулах заавар
+Сонголт 1: Команд мөр (CMD) ашиглан локал дээр ажиллуулах
+Төслийн үндсэн хавтас руу орно.
+
+Шаардлагатай сангуудыг бэлдэх:
+
+Bash
+go mod tidy
+Програмыг ажиллуулах:
+
+Bash
+go run cmd/main.go
+Сервер http://localhost:8080 хаяг дээр ажиллах болно.
+
+Сонголт 2: Docker Compose ашиглан ажиллуулах
+Docker програм ажиллаж байгаа эсэхийг шалгана.
+
+Контейнерийг бүтээн ажиллуулах:
+
+Bash
+docker compose up --build
+API нь http://localhost:8080 хаяг дээр бэлэн болно.
