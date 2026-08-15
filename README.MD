@@ -1,10 +1,30 @@
+## Overview
+This project provides a ledger service API. It includes account management and transaction processing capabilities.
+
+## Getting Started
+
+### Prerequisites
+* Go (version 1.18 or higher)
+* Docker and Docker Compose
+* Postman (for API testing)
+
+### Running Locally (CMD)
+1. Navigate to the project root directory.
+2. Initialize and download dependencies:
+   ```bash
+   go mod tidy
 Run the application:
 
 Bash
-go run cmd/main.go
-The server will start on http://localhost:8080.
+go run cmd/api/main.go
+The server will start at http://localhost:8080.
 
-Option 2: Running with Docker Compose
+Running Tests
+To run all unit and integration tests locally, use:
+
+Bash
+go test ./...
+Running with Docker
 Ensure Docker is running.
 
 Build and start the containers:
@@ -13,33 +33,11 @@ Bash
 docker compose up --build
 The API will be available at http://localhost:8080.
 
-Монгол Хувилбар
-Шаардлагатай зүйлс
-Go (хувилбар 1.18 болон түүнээс дээш)
+Project Reports
+Postman Collection & API Testing: Tested core endpoints (POST /accounts, POST /transactions).
 
-Docker болон Docker Compose
+Input Validation & Error Handling: Verified error cases and constraint violations.
 
-Postman (API турших зорилгоор)
+Repository Cleanup: Configured .gitignore for security and clean tracking.
 
-Ажиллуулах заавар
-Сонголт 1: Команд мөр (CMD) ашиглан локал дээр ажиллуулах
-Төслийн үндсэн хавтас руу орно.
-
-Шаардлагатай сангуудыг бэлдэх:
-
-Bash
-go mod tidy
-Програмыг ажиллуулах:
-
-Bash
-go run cmd/main.go
-Сервер http://localhost:8080 хаяг дээр ажиллах болно.
-
-Сонголт 2: Docker Compose ашиглан ажиллуулах
-Docker програм ажиллаж байгаа эсэхийг шалгана.
-
-Контейнерийг бүтээн ажиллуулах:
-
-Bash
-docker compose up --build
-API нь http://localhost:8080 хаяг дээр бэлэн болно.
+Documentation: Integrated comprehensive setup and testing guides.
